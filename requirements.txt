@@ -1,0 +1,10 @@
+pinecone>=5.0.0
+openai>=1.40.0
+python-dotenv>=1.0.1
+rapidfuzz>=3.9.0
+tqdm>=4.66.4
+numpy>=1.26.4
+
+# Optional (used only if you choose --embedding-provider local)
+sentence-transformers>=3.0.1
+torch>=2.2.0

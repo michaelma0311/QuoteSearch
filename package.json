@@ -1,0 +1,30 @@
+{
+  "name": "bookrag",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "ingest": "node --loader ts-node/esm scripts/ingest.ts"
+  },
+  "dependencies": {
+    "@pinecone-database/pinecone": "^4.1.0",
+    "next": "^14.2.15",
+    "openai": "^4.86.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.24",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.15",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}
+
