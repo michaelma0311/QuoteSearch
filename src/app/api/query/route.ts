@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { OpenAI } from "openai";
 import { Pinecone } from "@pinecone-database/pinecone";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   buildPdfToBookPageEstimator,
@@ -25,11 +27,18 @@ let _cache:
       chapterTitles: ReturnType<typeof loadChapterTitles>;
     } = null;
 
+function resolveDataPath(rel: string) {
+  const p1 = path.join(process.cwd(), "public", "data", rel);
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(process.cwd(), rel);
+  return p2;
+}
+
 function getCache() {
   if (_cache) return _cache;
-  const bookTxt = repoPath("book.txt");
-  const chapterJson = repoPath("chapter_book_pages.tale.json");
-  const titlesJson = repoPath("chapter_titles.tale.json");
+  const bookTxt = resolveDataPath("book.txt");
+  const chapterJson = resolveDataPath("chapter_book_pages.tale.json");
+  const titlesJson = resolveDataPath("chapter_titles.tale.json");
 
   const pages = loadPagesFromBookTxt(bookTxt);
   const perPageMeta = inferBookAndChapterByPage(pages);
@@ -239,78 +248,102 @@ async function semanticBest(quote: string) {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as Body;
-  const quote = (body.quote ?? "").trim();
-  const fuzzyThreshold =
-    typeof body.fuzzyThreshold === "number" ? body.fuzzyThreshold : 70;
-
-  if (!quote) {
-    return NextResponse.json({ ok: false, error: "Missing quote" }, { status: 400 });
-  }
-
-  const { pages, perPageMeta, pageInfo, estimateBookPage, chapterTitles } = getCache();
-
-  const fuzzy = fuzzyBestPage(pages, pageInfo, quote);
-  if (fuzzy.score >= fuzzyThreshold) {
-    const meta = perPageMeta[fuzzy.pdf_page] ?? { book: null, chapter: null };
-    const pinfo = pageInfo[fuzzy.pdf_page];
-    const chapter =
-      typeof (fuzzy as any).matchOffset === "number" && pinfo
-        ? chapterForOffset(pinfo, (fuzzy as any).matchOffset)
-        : meta.chapter;
-    const chapterTitle = meta.book && chapter ? chapterTitles?.[meta.book]?.[chapter] : null;
-    const pageText = (pinfo?.normalized ?? pages.find((p) => p.pdf_page === fuzzy.pdf_page)?.text ?? "");
-    const span = bestApproxSpan(pageText, quote);
-    const context = contextAroundSpan(pageText, span);
-    return NextResponse.json({
-      ok: true,
-      mode: "fuzzy",
-      pdf_page: fuzzy.pdf_page,
-      estimated_book_page: estimateBookPage(meta.book, fuzzy.pdf_page),
-      book: meta.book,
-      chapter,
-      chapter_title: chapterTitle,
-      score: fuzzy.score,
-      context
-    });
-  }
-
   try {
-    const sem = await semanticBest(quote);
-    if (!sem) {
+    const body = (await req.json().catch(() => ({}))) as Body;
+    const quote = (body.quote ?? "").trim();
+    const fuzzyThreshold =
+      typeof body.fuzzyThreshold === "number" ? body.fuzzyThreshold : 70;
+
+    if (!quote) {
+      return NextResponse.json(
+        { ok: false, error: "Missing quote" },
+        { status: 400 }
+      );
+    }
+
+    const { pages, perPageMeta, pageInfo, estimateBookPage, chapterTitles } =
+      getCache();
+
+    const fuzzy = fuzzyBestPage(pages, pageInfo, quote);
+    if (fuzzy.score >= fuzzyThreshold) {
+      const meta = perPageMeta[fuzzy.pdf_page] ?? { book: null, chapter: null };
+      const pinfo = pageInfo[fuzzy.pdf_page];
+      const chapter =
+        typeof (fuzzy as any).matchOffset === "number" && pinfo
+          ? chapterForOffset(pinfo, (fuzzy as any).matchOffset)
+          : meta.chapter;
+      const chapterTitle =
+        meta.book && chapter ? chapterTitles?.[meta.book]?.[chapter] : null;
+      const pageText =
+        pinfo?.normalized ??
+        pages.find((p) => p.pdf_page === fuzzy.pdf_page)?.text ??
+        "";
+      const span = bestApproxSpan(pageText, quote);
+      const context = contextAroundSpan(pageText, span);
       return NextResponse.json({
-        ok: false,
-        error:
-          "Fuzzy match was weak and Pinecone returned no matches (did you run ingest?)"
+        ok: true,
+        mode: "fuzzy",
+        pdf_page: fuzzy.pdf_page,
+        estimated_book_page: estimateBookPage(meta.book, fuzzy.pdf_page),
+        book: meta.book,
+        chapter,
+        chapter_title: chapterTitle,
+        score: fuzzy.score,
+        context
       });
     }
-    const md: any = sem.md ?? {};
-    const meta = perPageMeta[sem.pdf_page] ?? { book: null, chapter: null };
-    const book = typeof md.book === "string" ? md.book : meta.book;
-    const chapter =
-      typeof md.chapter === "number" ? md.chapter : (meta.chapter ?? null);
-    const chapterTitle = book && chapter ? chapterTitles?.[book]?.[chapter] : null;
-    const pinfo = pageInfo[sem.pdf_page];
-    const pageText = (pinfo?.normalized ?? pages.find((p) => p.pdf_page === sem.pdf_page)?.text ?? "");
-    const span = bestApproxSpan(pageText, quote);
-    const context = contextAroundSpan(pageText, span);
-    return NextResponse.json({
-      ok: true,
-      mode: "semantic",
-      pdf_page: sem.pdf_page,
-      estimated_book_page: estimateBookPage(book, sem.pdf_page),
-      book,
-      chapter,
-      chapter_title: chapterTitle,
-      score: sem.score,
-      context
-    });
+
+    try {
+      const sem = await semanticBest(quote);
+      if (!sem) {
+        return NextResponse.json({
+          ok: false,
+          error:
+            "Fuzzy match was weak and Pinecone returned no matches (did you run ingest?)"
+        });
+      }
+      const md: any = sem.md ?? {};
+      const meta = perPageMeta[sem.pdf_page] ?? { book: null, chapter: null };
+      const book = typeof md.book === "string" ? md.book : meta.book;
+      const chapter =
+        typeof md.chapter === "number" ? md.chapter : (meta.chapter ?? null);
+      const chapterTitle =
+        book && chapter ? chapterTitles?.[book]?.[chapter] : null;
+      const pinfo = pageInfo[sem.pdf_page];
+      const pageText =
+        pinfo?.normalized ??
+        pages.find((p) => p.pdf_page === sem.pdf_page)?.text ??
+        "";
+      const span = bestApproxSpan(pageText, quote);
+      const context = contextAroundSpan(pageText, span);
+      return NextResponse.json({
+        ok: true,
+        mode: "semantic",
+        pdf_page: sem.pdf_page,
+        estimated_book_page: estimateBookPage(book, sem.pdf_page),
+        book,
+        chapter,
+        chapter_title: chapterTitle,
+        score: sem.score,
+        context
+      });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Fuzzy match was weak, and semantic search failed: " +
+            (e instanceof Error ? e.message : String(e))
+        },
+        { status: 500 }
+      );
+    }
   } catch (e) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          "Fuzzy match was weak, and semantic search failed: " + (e instanceof Error ? e.message : String(e))
+          "API error: " + (e instanceof Error ? e.message : String(e))
       },
       { status: 500 }
     );

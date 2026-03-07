@@ -36,8 +36,16 @@ export default function HomePage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ quote, fuzzyThreshold: 70 })
       });
-      const json = (await res.json()) as QueryResponse;
-      setResult(json);
+      const raw = await res.text();
+      try {
+        const json = JSON.parse(raw) as QueryResponse;
+        setResult(json);
+      } catch {
+        setResult({
+          ok: false,
+          error: `API returned non-JSON (${res.status}). Body:\n${raw || "(empty)"}`
+        });
+      }
     } catch (e) {
       setResult({ ok: false, error: String(e) });
     } finally {
