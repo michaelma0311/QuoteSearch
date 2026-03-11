@@ -56,18 +56,16 @@ export default function HomePage() {
   return (
     <div className="container">
       <div className="header">
-        <h1 className="title">BookRAG</h1>
+        <h1 className="title">To2cSearch</h1>
         <p className="subtitle">
-          Paste a quote from <span className="mono">A Tale of Two Cities</span>{" "}
-          and get the best-matching <b>PDF page</b> (and an optional estimated{" "}
-          <b>printed book page</b>).
+          Paste a quote from A Tale of Two Cities to get the best-matching quote from the Dover Edition. (Margin of error might be +/- 1 page).
         </p>
       </div>
 
       <div className="row">
         <div className="card">
           <div style={{ marginBottom: 10, color: "var(--muted)" }}>
-            Quote / excerpt
+            Quote - Spelling should be somewhat accurate please :)
           </div>
           <textarea
             className="textarea"
@@ -103,21 +101,14 @@ export default function HomePage() {
             <>
               <div className="grid">
                 <div className="stat">
-                  <div className="statLabel">Mode</div>
-                  <div className="statValue">{result.mode}</div>
-                </div>
-                <div className="stat">
-                  <div className="statLabel">PDF page</div>
-                  <div className="statValue">{result.pdf_page}</div>
-                </div>
-                <div className="stat">
                   <div className="statLabel">Printed page (estimated)</div>
                   <div className="statValue">
                     {result.estimated_book_page ?? "—"}
                   </div>
                 </div>
+                
                 <div className="stat">
-                  <div className="statLabel">Score</div>
+                  <div className="statLabel">Accuracy Score</div>
                   <div className="statValue">{result.score.toFixed(2)}</div>
                 </div>
               </div>
