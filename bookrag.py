@@ -444,7 +444,7 @@ def query(
         )
     except Exception as e:
         print(f"Semantic search failed: {e}")
-        print("Tip: set PINECONE_API_KEY + PINECONE_INDEX (and OPENAI_API_KEY if using --embedding-provider openai), then run: python bookrag.py ingest ...")
+        print("Tip: set PINECONE_API_KEY + PINECONE_INDEX (and OPENAI_API_KEY if using --embedding-provider openai), then run: python to2csearch.py ingest ...")
         return
     if not matches:
         print("No Pinecone matches returned (is the index ingested + env vars set?).")

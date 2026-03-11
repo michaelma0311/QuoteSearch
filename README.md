@@ -1,4 +1,4 @@
-## BookRAG (page-aware quote → page number)
+## To2cSearch (page-aware quote → page number)
 
 This turns your `book.txt` (with `=== Page N ===` markers) into a lookup tool:
 
@@ -19,7 +19,7 @@ python -m pip install -r requirements.txt
 
 ```powershell
 setx PINECONE_API_KEY "..."
-setx PINECONE_INDEX "bookrag-tale"
+setx PINECONE_INDEX "to2csearch-tale"
 setx PINECONE_CLOUD "aws"
 setx PINECONE_REGION "us-east-1"
 setx PINECONE_NAMESPACE "tale-of-two-cities"
@@ -42,13 +42,13 @@ The tool will:
 ### Ingest into Pinecone (semantic search)
 
 ```bash
-python bookrag.py ingest --book-txt book.txt --chapter-book-pages chapter_book_pages.example.json
+python to2csearch.py ingest --book-txt book.txt --chapter-book-pages chapter_book_pages.example.json
 ```
 
 ### Query a quote
 
 ```bash
-python bookrag.py query --book-txt book.txt --quote "it was the best of times, it was the worst of times"
+python to2csearch.py query --book-txt book.txt --quote "it was the best of times, it was the worst of times"
 ```
 
 If fuzzy match is weak, it automatically falls back to Pinecone semantic search (if configured).

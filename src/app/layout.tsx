@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata = {
-  title: "BookRAG",
+  title: "To2cSearch",
   description: "Quote → best matching PDF page (with optional printed-page estimate)"
 };
 
