@@ -20,7 +20,7 @@ type QueryResponse =
 
 export default function HomePage() {
   const [quote, setQuote] = useState(
-    "it was the best of times, it was the worst of times"
+    "AR X DK"
   );
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
@@ -65,7 +65,7 @@ export default function HomePage() {
       <div className="row">
         <div className="card">
           <div style={{ marginBottom: 10, color: "var(--muted)" }}>
-            Quote - Spelling should be somewhat accurate please :)
+            Aarush looking mad fine rn :)
           </div>
           <textarea
             className="textarea"
