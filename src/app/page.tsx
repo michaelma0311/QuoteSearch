@@ -65,7 +65,7 @@ export default function HomePage() {
       <div className="row">
         <div className="card">
           <div style={{ marginBottom: 10, color: "var(--muted)" }}>
-            Aarush is such a handsome indian man.
+            Enter quote to get page number, margin of error +/- 1 page. Wording should be pretty exact :).
           </div>
           <textarea
             className="textarea"
