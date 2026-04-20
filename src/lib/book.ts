@@ -9,6 +9,10 @@ export type PerPageMeta = Record<
 
 const PAGE_RE = /^===\s*Page\s+(\d+)\s*===$/i;
 const CHAPTER_RE = /^\s*Chapter\s+(\d+)\b/i;
+const CHAPTER_ORDINAL_RE = /^\s*CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE)\b/i;
+const ORDINAL_MAP: Record<string, number> = {
+  one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,
+};
 
 function normalizeSpace(s: string) {
   return s.replace(/\s+/g, " ").trim();
@@ -60,17 +64,22 @@ function buildNormalizedAndChapterOffsets(pageText: string) {
   const lines = pageText.split(/\r?\n/);
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    const ch = CHAPTER_RE.exec(line);
-
     const lineNorm = normalizeSpace(line);
     if (!lineNorm) continue;
 
-    const offsetBefore = normalized.length ? normalized.length + 1 : 0; // +1 for join space
+    const offsetBefore = normalized.length ? normalized.length + 1 : 0;
     if (normalized.length) normalized += " ";
     normalized += lineNorm;
 
+    const ch = CHAPTER_RE.exec(line);
     if (ch) {
       chapterStarts.push({ chapter: Number(ch[1]), offset: offsetBefore });
+    } else {
+      const co = CHAPTER_ORDINAL_RE.exec(line);
+      if (co) {
+        const num = ORDINAL_MAP[co[1].toLowerCase()];
+        if (num) chapterStarts.push({ chapter: num, offset: offsetBefore });
+      }
     }
   }
 
@@ -169,9 +178,10 @@ export function buildPdfToBookPageEstimator(opts: {
     const book = m?.book;
     if (!book) continue;
     for (const line of p.text.split(/\r?\n/)) {
-      const c = CHAPTER_RE.exec(line);
-      if (!c) continue;
-      const ch = Number(c[1]);
+      const cNum = CHAPTER_RE.exec(line);
+      const cOrd = cNum ? null : CHAPTER_ORDINAL_RE.exec(line);
+      const ch = cNum ? Number(cNum[1]) : (cOrd ? (ORDINAL_MAP[cOrd[1].toLowerCase()] ?? 0) : 0);
+      if (!ch) continue;
       const key = `${book}::${ch}`;
       if (!firstSeen.has(key)) firstSeen.set(key, p.pdf_page);
     }

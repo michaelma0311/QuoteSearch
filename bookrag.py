@@ -20,6 +20,18 @@ except Exception:
 PAGE_RE = re.compile(r"^===\s*Page\s+(\d+)\s*===$", re.IGNORECASE)
 BOOK_RE = re.compile(r"^\s*Book\s+the\s+(First|Second|Third)\b", re.IGNORECASE)
 CHAPTER_RE = re.compile(r"^\s*Chapter\s+(\d+)\b", re.IGNORECASE)
+CHAPTER_ORDINAL_RE = re.compile(
+    r"^\s*CHAPTER\s+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|"
+    r"ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY)\b",
+    re.IGNORECASE,
+)
+_ORDINAL_MAP = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20,
+}
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,14 @@ def infer_book_and_chapter_by_page(pages: List[Page]) -> Dict[int, Dict[str, Any
                 if first_chapter_on_page is None:
                     first_chapter_on_page = ch
                 current_chapter = ch
+            else:
+                co = CHAPTER_ORDINAL_RE.match(line)
+                if co:
+                    ch = _ORDINAL_MAP.get(co.group(1).lower())
+                    if ch is not None:
+                        if first_chapter_on_page is None:
+                            first_chapter_on_page = ch
+                        current_chapter = ch
 
         # If no explicit book heading exists anywhere, infer book boundaries by chapter reset to 1.
         if not explicit_book_seen:
@@ -177,6 +197,13 @@ def build_pdf_to_book_page_estimator(
                 ch = int(m.group(1))
                 key = (b, ch)
                 first_seen.setdefault(key, p.pdf_page)
+            else:
+                mo = CHAPTER_ORDINAL_RE.match(line)
+                if mo:
+                    ch = _ORDINAL_MAP.get(mo.group(1).lower())
+                    if ch is not None:
+                        key = (b, ch)
+                        first_seen.setdefault(key, p.pdf_page)
 
     for book, mapping in chapter_book_pages.items():
         anchors: List[Tuple[int, int]] = []

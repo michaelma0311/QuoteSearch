@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { OpenAI } from "openai";
-import { Pinecone } from "@pinecone-database/pinecone";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -12,47 +10,60 @@ import {
   loadChapterTitles,
   loadPagesFromBookTxt,
   normalizeSpace,
-  repoPath
 } from "@/lib/book";
 
-type Body = { quote?: string; fuzzyThreshold?: number };
+type Body = { quote?: string; fuzzyThreshold?: number; book?: string };
 
-let _cache:
-  | null
-  | {
-      pages: ReturnType<typeof loadPagesFromBookTxt>;
-      perPageMeta: ReturnType<typeof inferBookAndChapterByPage>;
-      pageInfo: ReturnType<typeof inferPageChapterInfo>;
-      estimateBookPage: ReturnType<typeof buildPdfToBookPageEstimator>["estimate"];
-      chapterTitles: ReturnType<typeof loadChapterTitles>;
-    } = null;
+type BookCache = {
+  pages: ReturnType<typeof loadPagesFromBookTxt>;
+  perPageMeta: ReturnType<typeof inferBookAndChapterByPage>;
+  pageInfo: ReturnType<typeof inferPageChapterInfo>;
+  estimateBookPage: ReturnType<typeof buildPdfToBookPageEstimator>["estimate"];
+  chapterTitles: ReturnType<typeof loadChapterTitles>;
+};
+
+const _caches = new Map<string, BookCache>();
+
+const BOOK_FILES: Record<string, { txt: string; chapterPages: string; titles: string }> = {
+  tale: {
+    txt: "book.txt",
+    chapterPages: "chapter_book_pages.tale.json",
+    titles: "chapter_titles.tale.json",
+  },
+  butterflies: {
+    txt: "butterfliesbook_pages.txt",
+    chapterPages: "chapter_book_pages.butterflies.json",
+    titles: "chapter_titles.butterflies.json",
+  },
+};
 
 function resolveDataPath(rel: string) {
   const p1 = path.join(process.cwd(), "public", "data", rel);
   if (fs.existsSync(p1)) return p1;
-  const p2 = path.join(process.cwd(), rel);
-  return p2;
+  return path.join(process.cwd(), rel);
 }
 
-function getCache() {
-  if (_cache) return _cache;
-  const bookTxt = resolveDataPath("book.txt");
-  const chapterJson = resolveDataPath("chapter_book_pages.tale.json");
-  const titlesJson = resolveDataPath("chapter_titles.tale.json");
+function getCache(bookKey: string): BookCache {
+  const cached = _caches.get(bookKey);
+  if (cached) return cached;
+
+  const files = BOOK_FILES[bookKey];
+  if (!files) throw new Error(`Unknown book: ${bookKey}`);
+
+  const bookTxt = resolveDataPath(files.txt);
+  const chapterJson = resolveDataPath(files.chapterPages);
+  const titlesJson = resolveDataPath(files.titles);
 
   const pages = loadPagesFromBookTxt(bookTxt);
   const perPageMeta = inferBookAndChapterByPage(pages);
   const pageInfo = inferPageChapterInfo(pages);
   const chapterBookPages = loadChapterBookPages(chapterJson);
   const chapterTitles = loadChapterTitles(titlesJson);
-  const { estimate } = buildPdfToBookPageEstimator({
-    pages,
-    perPageMeta,
-    chapterBookPages
-  });
+  const { estimate } = buildPdfToBookPageEstimator({ pages, perPageMeta, chapterBookPages });
 
-  _cache = { pages, perPageMeta, pageInfo, estimateBookPage: estimate, chapterTitles };
-  return _cache;
+  const entry: BookCache = { pages, perPageMeta, pageInfo, estimateBookPage: estimate, chapterTitles };
+  _caches.set(bookKey, entry);
+  return entry;
 }
 
 function chapterForOffset(
@@ -75,10 +86,7 @@ function fuzzyBestPage(
   const q = normalizeSpace(quote).toLowerCase();
   let best = { pdf_page: pages[0]?.pdf_page ?? 0, score: -1, preview: "" };
 
-  const qTokens = q
-    .split(/[^a-z0-9']+/i)
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const qTokens = q.split(/[^a-z0-9']+/i).map((t) => t.trim()).filter(Boolean);
   const qTokenSet = new Set(qTokens);
 
   const bigrams = (s: string) => {
@@ -118,9 +126,6 @@ function fuzzyBestPage(
       return { pdf_page: p.pdf_page, score: 100, preview, matchOffset: idx };
     }
 
-    // Lightweight "fuzzy" score without extra deps:
-    // - token containment handles punctuation/spacing differences
-    // - bigram dice handles small typos
     const score = Math.max(tokenContainmentScore(low), bigramDiceScore(low));
     if (score > best.score) best = { pdf_page: p.pdf_page, score, preview: txt.slice(0, 320) };
   }
@@ -162,7 +167,6 @@ function bestApproxSpan(hay: string, needle: string) {
 
 function contextAroundSpan(text: string, span: { start: number; end: number }) {
   const t = normalizeSpace(text);
-  // sentence split: simple but effective for book prose
   const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (!sentences.length) return { before: "", match: t, after: "" };
 
@@ -170,7 +174,7 @@ function contextAroundSpan(text: string, span: { start: number; end: number }) {
   let pos = 0;
   for (const s of sentences) {
     starts.push(pos);
-    pos += s.length + 1; // +1 for join space
+    pos += s.length + 1;
   }
 
   const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -178,18 +182,14 @@ function contextAroundSpan(text: string, span: { start: number; end: number }) {
   for (let i = 0; i < sentences.length; i++) {
     const st = starts[i]!;
     const en = st + sentences[i]!.length;
-    if (span.start >= st && span.start <= en) {
-      idx = i;
-      break;
-    }
-    if (span.start > en) idx = i; // keep last before
+    if (span.start >= st && span.start <= en) { idx = i; break; }
+    if (span.start > en) idx = i;
   }
 
   const from = clamp(idx - 3, 0, sentences.length - 1);
   const to = clamp(idx + 3, 0, sentences.length - 1);
   const selected = sentences.slice(from, to + 1);
   const selectedText = selected.join(" ");
-
   const selectedStart = starts[from] ?? 0;
   const relStart = clamp(span.start - selectedStart, 0, selectedText.length);
   const relEnd = clamp(span.end - selectedStart, relStart, selectedText.length);
@@ -197,72 +197,22 @@ function contextAroundSpan(text: string, span: { start: number; end: number }) {
   return {
     before: selectedText.slice(0, relStart),
     match: selectedText.slice(relStart, relEnd),
-    after: selectedText.slice(relEnd)
+    after: selectedText.slice(relEnd),
   };
-}
-
-async function semanticBest(quote: string) {
-  const pineconeKey = process.env.PINECONE_API_KEY;
-  const pineconeIndex = process.env.PINECONE_INDEX;
-  const pineconeNamespace = process.env.PINECONE_NAMESPACE ?? "default";
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const openaiModel = process.env.OPENAI_EMBED_MODEL ?? "text-embedding-3-small";
-
-  if (!pineconeKey || !pineconeIndex) {
-    throw new Error("Missing PINECONE_API_KEY or PINECONE_INDEX");
-  }
-  if (!openaiKey) {
-    throw new Error("Missing OPENAI_API_KEY (for embeddings)");
-  }
-
-  const openai = new OpenAI({ apiKey: openaiKey });
-  const emb = await openai.embeddings.create({
-    model: openaiModel,
-    input: quote
-  });
-  const vector = emb.data[0]?.embedding;
-  if (!vector) throw new Error("No embedding returned");
-
-  const pc = new Pinecone({ apiKey: pineconeKey });
-  const index = pc.index(pineconeIndex);
-
-  const res = await index.namespace(pineconeNamespace).query({
-    vector,
-    topK: 10,
-    includeMetadata: true
-  });
-
-  const byPage = new Map<number, { score: number; md: any }>();
-  for (const m of res.matches ?? []) {
-    const md: any = m.metadata ?? {};
-    const pdfPage = Number(md.pdf_page);
-    if (!Number.isFinite(pdfPage)) continue;
-    const existing = byPage.get(pdfPage);
-    const score = Number(m.score ?? 0);
-    if (!existing || score > existing.score) byPage.set(pdfPage, { score, md });
-  }
-
-  const best = [...byPage.entries()].sort((a, b) => b[1].score - a[1].score)[0];
-  if (!best) return null;
-  return { pdf_page: best[0], score: best[1].score, md: best[1].md };
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const quote = (body.quote ?? "").trim();
-    const fuzzyThreshold =
-      typeof body.fuzzyThreshold === "number" ? body.fuzzyThreshold : 70;
+    const fuzzyThreshold = typeof body.fuzzyThreshold === "number" ? body.fuzzyThreshold : 70;
+    const bookKey = body.book === "butterflies" ? "butterflies" : "tale";
 
     if (!quote) {
-      return NextResponse.json(
-        { ok: false, error: "Missing quote" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing quote" }, { status: 400 });
     }
 
-    const { pages, perPageMeta, pageInfo, estimateBookPage, chapterTitles } =
-      getCache();
+    const { pages, perPageMeta, pageInfo, estimateBookPage, chapterTitles } = getCache(bookKey);
 
     const fuzzy = fuzzyBestPage(pages, pageInfo, quote);
     if (fuzzy.score >= fuzzyThreshold) {
@@ -272,12 +222,8 @@ export async function POST(req: Request) {
         typeof (fuzzy as any).matchOffset === "number" && pinfo
           ? chapterForOffset(pinfo, (fuzzy as any).matchOffset)
           : meta.chapter;
-      const chapterTitle =
-        meta.book && chapter ? chapterTitles?.[meta.book]?.[chapter] : null;
-      const pageText =
-        pinfo?.normalized ??
-        pages.find((p) => p.pdf_page === fuzzy.pdf_page)?.text ??
-        "";
+      const chapterTitle = meta.book && chapter ? chapterTitles?.[meta.book]?.[chapter] : null;
+      const pageText = pinfo?.normalized ?? pages.find((p) => p.pdf_page === fuzzy.pdf_page)?.text ?? "";
       const span = bestApproxSpan(pageText, quote);
       const context = contextAroundSpan(pageText, span);
       return NextResponse.json({
@@ -289,64 +235,18 @@ export async function POST(req: Request) {
         chapter,
         chapter_title: chapterTitle,
         score: fuzzy.score,
-        context
+        context,
       });
     }
 
-    try {
-      const sem = await semanticBest(quote);
-      if (!sem) {
-        return NextResponse.json({
-          ok: false,
-          error:
-            "Fuzzy match was weak and Pinecone returned no matches (did you run ingest?)"
-        });
-      }
-      const md: any = sem.md ?? {};
-      const meta = perPageMeta[sem.pdf_page] ?? { book: null, chapter: null };
-      const book = typeof md.book === "string" ? md.book : meta.book;
-      const chapter =
-        typeof md.chapter === "number" ? md.chapter : (meta.chapter ?? null);
-      const chapterTitle =
-        book && chapter ? chapterTitles?.[book]?.[chapter] : null;
-      const pinfo = pageInfo[sem.pdf_page];
-      const pageText =
-        pinfo?.normalized ??
-        pages.find((p) => p.pdf_page === sem.pdf_page)?.text ??
-        "";
-      const span = bestApproxSpan(pageText, quote);
-      const context = contextAroundSpan(pageText, span);
-      return NextResponse.json({
-        ok: true,
-        mode: "semantic",
-        pdf_page: sem.pdf_page,
-        estimated_book_page: estimateBookPage(book, sem.pdf_page),
-        book,
-        chapter,
-        chapter_title: chapterTitle,
-        score: sem.score,
-        context
-      });
-    } catch (e) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Fuzzy match was weak, and semantic search failed: " +
-            (e instanceof Error ? e.message : String(e))
-        },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({
+      ok: false,
+      error: `No strong match found (best score: ${fuzzy.score.toFixed(1)}). Try a longer or more exact quote.`,
+    });
   } catch (e) {
     return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "API error: " + (e instanceof Error ? e.message : String(e))
-      },
+      { ok: false, error: "API error: " + (e instanceof Error ? e.message : String(e)) },
       { status: 500 }
     );
   }
 }
-
