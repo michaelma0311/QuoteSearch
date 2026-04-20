@@ -33,7 +33,7 @@ type BookKey = keyof typeof BOOKS;
 
 export default function HomePage() {
   const [selectedBook, setSelectedBook] = useState<BookKey>("tale");
-  const [quote, setQuote] = useState(BOOKS.tale.placeholder);
+  const [quote, setQuote] = useState<string>(BOOKS.tale.placeholder);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
 
