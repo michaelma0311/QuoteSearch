@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata = {
-  title: "To2cSearch",
-  description: "Quote → best matching PDF page (with optional printed-page estimate)"
+  title: "QuoteSearch",
+  description: "Get most accurate book-specific"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
